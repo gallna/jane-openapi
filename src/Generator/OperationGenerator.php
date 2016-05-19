@@ -70,7 +70,7 @@ class OperationGenerator
             // $response = $this->httpClient->sendRequest($request);
             new Expr\Assign(new Expr\Variable('response'), new Expr\MethodCall(
                 new Expr\PropertyFetch(new Expr\Variable('this'), 'httpClient'),
-                'sendRequest',
+                getenv("ASYNC") ? 'sendAsyncRequest' : 'sendRequest',
                 [new Arg(new Expr\Variable('request'))]
             ))
         ]);
@@ -78,20 +78,21 @@ class OperationGenerator
         // Output
         $outputStatements = [];
         $outputTypes = ["\\Psr\\Http\\Message\\ResponseInterface"];
-
-        foreach ($operation->getOperation()->getResponses() as $status => $response) {
-            if ($response instanceof Reference) {
-                $response = $this->resolver->resolve($response);
-            }
-
-            list($outputType, $ifStatus) = $this->createResponseDenormalizationStatement($status, $response->getSchema(), $context);
-
-            if (null !== $outputType) {
-                if (!in_array($outputType, $outputTypes)) {
-                    $outputTypes[] = $outputType;
+        if (!getenv("ASYNC")) {
+            foreach ($operation->getOperation()->getResponses() as $status => $response) {
+                if ($response instanceof Reference) {
+                    $response = $this->resolver->resolve($response);
                 }
 
-                $outputStatements[] = $ifStatus;
+                list($outputType, $ifStatus) = $this->createResponseDenormalizationStatement($status, $response->getSchema(), $context);
+
+                if (null !== $outputType) {
+                    if (!in_array($outputType, $outputTypes)) {
+                        $outputTypes[] = $outputType;
+                    }
+
+                    $outputStatements[] = $ifStatus;
+                }
             }
         }
 
