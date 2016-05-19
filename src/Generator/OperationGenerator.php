@@ -78,25 +78,41 @@ class OperationGenerator
         // Output
         $outputStatements = [];
         $outputTypes = ["\\Psr\\Http\\Message\\ResponseInterface"];
-        if (!getenv("ASYNC")) {
-            foreach ($operation->getOperation()->getResponses() as $status => $response) {
-                if ($response instanceof Reference) {
-                    $response = $this->resolver->resolve($response);
+        foreach ($operation->getOperation()->getResponses() as $status => $response) {
+            if ($response instanceof Reference) {
+                $response = $this->resolver->resolve($response);
+            }
+
+            list($outputType, $ifStatus) = $this->createResponseDenormalizationStatement($status, $response->getSchema(), $context);
+
+            if (null !== $outputType) {
+                if (!in_array($outputType, $outputTypes)) {
+                    $outputTypes[] = $outputType;
                 }
 
-                list($outputType, $ifStatus) = $this->createResponseDenormalizationStatement($status, $response->getSchema(), $context);
-
-                if (null !== $outputType) {
-                    if (!in_array($outputType, $outputTypes)) {
-                        $outputTypes[] = $outputType;
-                    }
-
-                    $outputStatements[] = $ifStatus;
-                }
+                $outputStatements[] = $ifStatus;
             }
         }
 
         if (!empty($outputStatements)) {
+            if (getenv("ASYNC")) {
+                $outputStatements[] = new Stmt\Return_(new Expr\Variable('response'));
+                $outputStatements = [
+                    new Stmt\Return_(
+                        new Expr\MethodCall(
+                            new Expr\Variable('response'),
+                            'then',
+                            [
+                                new Expr\Closure([
+                                    'params' => [new Expr\Variable('response')],
+                                    'stmts' => $outputStatements
+                                ])
+                            ]
+                        )
+                    )
+                ];
+            }
+
             $statements[] = new Stmt\If_(
                 new Expr\BinaryOp\Equal(new Expr\ConstFetch(new Name('self::FETCH_OBJECT')), new Expr\Variable('fetch')), [
                     'stmts' => $outputStatements
